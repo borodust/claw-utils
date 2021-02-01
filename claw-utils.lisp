@@ -5,11 +5,10 @@
            #:claw-array
            #:define-bitfield-from-enum
            #:define-bitfield-from-constants
-           #:ignore-functions))
+
+           #:common-prefix))
 
 (cl:in-package :claw-utils)
-
-(defvar *class* nil)
 
 ;;;
 ;;; CLAW POINTER
@@ -33,6 +32,23 @@
 ;;;
 ;;; BITFIELD
 ;;;
+(defun common-prefix (strings)
+  (let ((len (length strings))
+        (strings (map 'vector #'string strings)))
+    (if (> len 1)
+        (let* ((sorted-strings (sort strings #'string<))
+               (first (aref sorted-strings 0))
+               (last (aref sorted-strings (1- (length sorted-strings))))
+               (mismatch-idx (mismatch first last)))
+          (if mismatch-idx
+              (if-let ((hyphenated-prefix-idx (position #\- first :from-end t
+                                                                  :end mismatch-idx)))
+                (subseq first 0 (1+ hyphenated-prefix-idx))
+                "")
+              ""))
+        "")))
+
+
 (defmacro define-bitfield-from-enum (name enum)
   `(cffi:defbitfield ,name
      ,@(loop for keyword in (cffi:foreign-enum-keyword-list enum)
@@ -40,7 +56,7 @@
 
 
 (defmacro define-bitfield-from-constants (name &body constants)
-  (let ((prefix-len (length (claw.util:common-prefix constants))))
+  (let ((prefix-len (length (common-prefix constants))))
     `(cffi:defbitfield ,name
        ,@(loop for constant in constants
                collect (let ((stringified (string constant)))
@@ -48,6 +64,8 @@
                                                   prefix-len
                                                   (1- (length stringified))))
                            ,(eval constant)))))))
+
+
 
 
 ;;;
@@ -127,48 +145,3 @@
 (defmethod cffi:expand-to-foreign-dyn (value var body (type claw-array))
   `(with-foreign-array* (,var ,value ',(array-type-of type))
      ,@body))
-
-;;;
-;;;
-;;;
-(defun match-function-signature (entity owner-name name &rest param-type-names)
-  (let ((owner (claw.spec:foreign-owner entity))
-        (any-params (eq (first param-type-names) :any)))
-    (and (typep entity 'claw.spec:foreign-function)
-         (string= (if owner-name
-                      (claw.spec:foreign-entity-name entity)
-                      (claw.spec:format-full-foreign-entity-name entity))
-                  (if (and owner (or (eq name :ctor) (eq name :dtor)))
-                      (claw.spec:foreign-entity-name owner)
-                      name))
-         (if owner-name
-             (when owner
-               (string= owner-name (claw.spec:format-full-foreign-entity-name owner)))
-             t)
-         (or any-params
-             (= (length (claw.spec:foreign-function-parameters entity))
-                (length param-type-names)))
-         (or any-params
-             (loop for expected-param in (claw.spec:foreign-function-parameters entity)
-                   for provided-type-name in param-type-names
-                   for expected-unqualified = (claw.spec:unqualify-foreign-entity
-                                               (claw.spec:foreign-enveloped-entity
-                                                expected-param))
-                   for expected-param-type-name = (when (claw.spec:foreign-named-p expected-unqualified)
-                                                    (claw.spec:format-full-foreign-entity-name
-                                                     expected-unqualified))
-                   always (string= expected-param-type-name provided-type-name))))))
-
-
-(defmacro ignore-functions (&body funcs)
-  (let ((entity (gensym (string 'entity))))
-    `(lambda (,entity)
-       (or ,@(loop for fu in funcs
-                   collect (if (eq (first fu) :in-class)
-                               `(let ((*class* ,(second fu)))
-                                  (funcall (ignore-functions ,@(cddr fu)) ,entity))
-                               (destructuring-bind (name &rest params) fu
-                                 `(match-function-signature ,entity
-                                                            *class*
-                                                            ,name
-                                                            ,@params))))))))

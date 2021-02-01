@@ -1,4 +1,4 @@
 (asdf:defsystem :claw-utils
-  :depends-on (:alexandria :cffi :claw)
+  :depends-on (:alexandria :cffi)
   :serial t
   :components ((:file "claw-utils")))
