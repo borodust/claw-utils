@@ -22,7 +22,7 @@
 
 
 (defmethod cffi:expand-to-foreign (value (type claw-pointer))
-  (if value `(or ,value (cffi:null-pointer)) (cffi:null-pointer)))
+  (if value `(or ,value (cffi:null-pointer)) `(cffi:null-pointer)))
 
 
 (defmethod cffi:expand-from-foreign (value (type claw-pointer))
