@@ -3,6 +3,8 @@
   (:export #:claw-pointer
            #:claw-string
            #:claw-array
+           #:claw-function-prototype-pointer
+           #:foreign-funcall-prototype-pointer
            #:define-bitfield-from-enum
            #:define-bitfield-from-constants
 
@@ -18,7 +20,7 @@
 
 (cffi:define-parse-method claw-pointer (&optional (type :void))
   (make-instance 'claw-pointer
-                 :actual-type `(:pointer ,(cffi::canonicalize-foreign-type type))))
+                 :actual-type `(:pointer ,type)))
 
 
 (defmethod cffi:expand-to-foreign (value (type claw-pointer))
@@ -103,6 +105,41 @@
   (declare (ignore type))
   `(with-foreign-string* (,var ,value)
      ,@body))
+
+
+;;;
+;;; CLAW FUNCTION PROTOTYPE
+;;;
+(cffi:define-foreign-type claw-function-prototype-pointer ()
+  ((result-type :initarg :result-type
+                :initform (error "Result type missing")
+                :reader result-type-of)
+   (parameter-types :initarg :parameter-types
+                    :initform (error "Parameter types missing")
+                    :reader parameter-types-of)))
+
+
+(cffi:define-parse-method claw-function-prototype-pointer (result-type &rest parameter-types)
+  (make-instance 'claw-function-prototype-pointer :actual-type :pointer
+                                                  :result-type result-type
+                                                  :parameter-types parameter-types))
+
+
+(defmethod cffi:expand-from-foreign (value (type claw-function-prototype-pointer))
+  (declare (ignore type))
+  value)
+
+
+(defmacro foreign-funcall-prototype-pointer (pointer type options &rest args)
+  (let ((unaliased (cffi::follow-typedefs (cffi::parse-type type))))
+    (unless (typep unaliased 'claw-function-prototype-pointer)
+      (error "Provided type is not a pointer to a function prototype"))
+    `(cffi:foreign-funcall-pointer ,pointer ,options
+                                   ,@(loop for param-type in (parameter-types-of unaliased)
+                                           for rest-args = args then (rest args)
+                                           append `(,param-type ,(first rest-args)))
+                                   ,(result-type-of unaliased))))
+
 
 
 ;;;
